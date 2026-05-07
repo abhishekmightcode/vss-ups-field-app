@@ -56,14 +56,20 @@ async function loadFromFirebase() {
     const totalVisits = allDealers.reduce((sum, d) => sum + (d.dealer_meets ? d.dealer_meets.length : 0), 0);
     document.getElementById("totalVisits").textContent = totalVisits;
 
-    // Last sync time
+    // Last sync time — handle both Firestore Timestamp and plain string
     const sorted = [...allDealers].sort((a, b) => {
-      const ta = a.last_synced ? a.last_synced.toMillis ? a.last_synced.toMillis() : 0 : 0;
-      const tb = b.last_synced ? b.last_synced.toMillis ? b.last_synced.toMillis() : 0 : 0;
+      const ta = a.last_synced
+        ? (a.last_synced.toMillis ? a.last_synced.toMillis() : new Date(a.last_synced).getTime())
+        : 0;
+      const tb = b.last_synced
+        ? (b.last_synced.toMillis ? b.last_synced.toMillis() : new Date(b.last_synced).getTime())
+        : 0;
       return tb - ta;
     });
     if (sorted[0] && sorted[0].last_synced) {
-      const d = sorted[0].last_synced.toDate ? sorted[0].last_synced.toDate() : new Date(sorted[0].last_synced);
+      const d = sorted[0].last_synced.toDate
+        ? sorted[0].last_synced.toDate()
+        : new Date(sorted[0].last_synced);
       lastSyncTime = d;
       document.getElementById("lastSync").textContent = formatTimeAgo(d);
     } else {
@@ -333,7 +339,9 @@ function openModal(d) {
   // Sync info
   const syncEl = document.getElementById("modalSyncInfo");
   if (d.last_synced) {
-    const d2 = d.last_synced.toDate ? d.last_synced.toDate() : new Date(d.last_synced);
+    const d2 = d.last_synced.toDate
+      ? d.last_synced.toDate()
+      : new Date(d.last_synced);
     syncEl.textContent = `Last synced: ${formatTimeAgo(d2)}`;
   } else {
     syncEl.textContent = "";
