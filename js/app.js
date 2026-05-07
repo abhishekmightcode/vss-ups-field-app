@@ -174,13 +174,19 @@ async function syncFromZoho() {
     console.log(`Zoho fetched ${zohoRecords.length} records`);
 
     // Write each record to Firebase
+    // Prefer Dealer_Code as doc ID when available, fallback to Zoho record ID
     const batch = window.FB.db.batch();
     for (const record of zohoRecords) {
       if (!record.id) continue;
+      const code = record.Dealer_Code;
+      // Use Dealer_Code as doc ID if available, otherwise Zoho record ID
+      const docId = (code && String(code).trim()) ? String(code) : String(record.id);
       const docRef = window.FB.db
         .collection(CONFIG.FIRESTORE_COLLECTION)
-        .doc(String(record.id));
+        .doc(docId);
       const data = mapZohoToFirestore(record);
+      // Also store `code` field explicitly for easy access
+      if (code) data.code = String(code);
       batch.set(docRef, data, { merge: true });
     }
     await batch.commit();
@@ -233,7 +239,7 @@ function applyFilters() {
   filteredDealers = allDealers.filter(d => {
     const matchType   = activeFilter === "all" || d.dealer_type === activeFilter;
     const matchSearch = !searchQuery || [
-      d.name, d.city, d.state, d.dealer_code, d.phone
+      d.name, d.city, d.state, d.dealer_code, d.code, d.phone
     ].some(v => (v || "").toLowerCase().includes(searchQuery));
     return matchType && matchSearch;
   });
@@ -263,10 +269,11 @@ function renderDealers() {
     const address = [d.city, d.state].filter(Boolean).join(", ");
     const visits = d.dealer_meets ? d.dealer_meets.length : 0;
 
+    const code = d.code || d.dealer_code || "";
     card.innerHTML = `
       <div class="card-top">
         <div class="card-name">${esc(d.name || "—")}</div>
-        ${d.dealer_code ? `<span class="card-code">${esc(d.dealer_code)}</span>` : ""}
+        ${code ? `<span class="card-code">${esc(code)}</span>` : ""}
       </div>
       <div class="card-meta">
         ${d.phone       ? `<span class="card-meta-item">📞 ${esc(d.phone)}</span>` : ""}
@@ -288,7 +295,7 @@ function openModal(d) {
 
   document.getElementById("modalDealerName").textContent = d.name || "—";
   document.getElementById("modalPhone").textContent      = d.phone || "—";
-  document.getElementById("modalCode").textContent       = d.dealer_code || "—";
+  document.getElementById("modalCode").textContent = (d.code || d.dealer_code || "—");
   document.getElementById("modalType").textContent        = d.dealer_type || "—";
   document.getElementById("modalLTV").textContent         = d.total_lifetime_value
     ? `Rs. ${Number(d.total_lifetime_value).toLocaleString("en-IN")}`
