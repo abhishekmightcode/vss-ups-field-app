@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head><title>Firestore Delete Test</title></head>
+<body style="font-family:monospace;background:#0e0f11;color:#e8e9eb;padding:20px">
+<h2>Delete Test — single doc</h2>
+<p id="status">Starting...</p>
+<script>
+const PROJECT = "upscrm-16643";
+const KEY = "AIzaSyDLBkc4fkJP0wU4-DRil1x4zr0nelBZi5E";
+const BASE = `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents`;
+
+async function main() {
+  const status = document.getElementById("status");
+
+  // Get first doc id
+  status.textContent = "Fetching doc list...";
+  const snap = await fetch(`${BASE}/ups_dealers?pageSize=1&key=${KEY}`);
+  const data = await snap.json();
+  if (!data.documents || data.documents.length === 0) {
+    status.textContent = "No docs found!";
+    return;
+  }
+  const firstDocName = data.documents[0].name;
+  const firstDocId = firstDocName.split("/").pop();
+  status.textContent = `First doc: ${firstDocId}\nFetching full list...`;
+
+  // Get ALL doc names
+  const allSnap = await fetch(`${BASE}/ups_dealers?pageSize=500&key=${KEY}`);
+  const allData = await allSnap.json();
+  const allDocs = allData.documents || [];
+  status.textContent = `Total docs: ${allDocs.length}\n\nDeleting first doc only...`;
+
+  // Try to delete just ONE doc using :commit
+  const deletePayload = JSON.stringify({
+    writes: [{
+      delete: { name: firstDocName }
+    }]
+  });
+
+  const delRes = await fetch(`${BASE}:commit?key=${KEY}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: deletePayload
+  });
+  const delResult = await delRes.json();
+  status.textContent += `\n\nDelete response:\n${JSON.stringify(delResult, null, 2)}`;
+
+  // Check if doc still exists
+  const checkRes = await fetch(`${firstDocName}?key=${KEY}`);
+  const checkData = await checkRes.json();
+  status.textContent += `\n\nDoc still exists: ${!!checkData.fields}`;
+  if (checkData.error) {
+    status.textContent += `\nError: ${checkData.error.message}`;
+  }
+}
+
+main().catch(e => document.getElementById("status").textContent = e.message);
+</script>
+</body>
+</html>
