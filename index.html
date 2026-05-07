@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>VSS UPS — Dealer Portal</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+
+  <!-- Firebase SDKs (loaded before app) -->
+  <script src="https://www.gstatic.com/firebasejs/11.5.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/11.5.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/11.5.0/firebase-auth-compat.js"></script>
+  <script>
+    // ── Firebase Init ──────────────────────────────────────────
+    const firebaseConfig = {
+      apiKey: "AIzaSyDLBkc4fkJP0wU4-DRil1x4zr0nelBZi5E",
+      authDomain: "upscrm-16643.firebaseapp.com",
+      projectId: "upscrm-16643",
+      storageBucket: "upscrm-16643.firebasestorage.app",
+      messagingSenderId: "53703710833",
+      appId: "1:53703710833:web:09bb7e05aa6d564ef023d0",
+      measurementId: "G-35DMX9YQ5L"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    const auth = firebase.auth();
+
+    // Expose globally for app.js
+    window.FB = { db, auth, firebase };
+  </script>
+</head>
+<body>
+  <div class="app-shell">
+
+    <!-- TOP BAR -->
+    <header class="topbar">
+      <div class="topbar-logo" id="topbarLogo">
+        <div class="logo-mark"></div>
+        <span class="logo-text">VSustain</span>
+      </div>
+      <div class="topbar-right">
+        <span class="sync-badge" id="syncBadge" title="Sync status">●</span>
+        <span class="month-badge" id="monthBadge"></span>
+      </div>
+    </header>
+
+    <!-- STATS STRIP -->
+    <div class="stats-strip">
+      <div class="stat-card">
+        <span class="stat-num" id="totalDealers">—</span>
+        <span class="stat-label">Total</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-num" id="totalVisits">—</span>
+        <span class="stat-label">Total Visits</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-num" id="lastSync">—</span>
+        <span class="stat-label">Last Sync</span>
+      </div>
+    </div>
+
+    <!-- SEARCH + FILTERS -->
+    <div class="controls-bar">
+      <div class="search-wrap">
+        <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="searchInput" placeholder="Search dealer, city, code..." class="search-input" />
+      </div>
+      <div class="filter-section">
+        <p class="filter-label">Dealer Type</p>
+        <div class="filter-bar" id="filterBar">
+          <button class="chip active" data-type="all">All</button>
+          <button class="chip" data-type="Distributor">Distributor</button>
+          <button class="chip" data-type="Retailer">Retailer</button>
+          <button class="chip" data-type="Service Partner">Service Partner</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- DEALER LIST -->
+    <main class="dealer-list" id="dealerList">
+      <div class="loading-state" id="loadingState">
+        <div class="spinner"></div>
+        <p>Loading dealers...</p>
+      </div>
+      <div class="error-state hidden" id="errorState">
+        <p>Could not load dealers.</p>
+        <button onclick="loadFromFirebase()" class="btn-retry">Retry</button>
+      </div>
+    </main>
+
+  </div>
+
+  <!-- ─────────────────────────────────────────────
+       DEALER DETAIL MODAL
+       ───────────────────────────────────────────── -->
+  <div class="modal-overlay hidden" id="detailModal">
+    <div class="modal-sheet">
+      <div class="modal-handle"></div>
+
+      <div class="modal-header">
+        <div>
+          <p class="modal-label">Dealer</p>
+          <h2 class="modal-title" id="modalDealerName">—</h2>
+        </div>
+        <button class="modal-close" onclick="closeModal()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <div class="info-grid">
+        <div class="info-item">
+          <span class="info-icon">📞</span>
+          <div><p class="info-label">Phone</p><p class="info-val" id="modalPhone">—</p></div>
+        </div>
+        <div class="info-item">
+          <span class="info-icon">🏷️</span>
+          <div><p class="info-label">Dealer Code</p><p class="info-val" id="modalCode">—</p></div>
+        </div>
+        <div class="info-item full">
+          <span class="info-icon">📍</span>
+          <div><p class="info-label">Address</p><p class="info-val" id="modalAddress">—</p></div>
+        </div>
+        <div class="info-item">
+          <span class="info-icon">👤</span>
+          <div><p class="info-label">Type</p><p class="info-val" id="modalType">—</p></div>
+        </div>
+        <div class="info-item">
+          <span class="info-icon">💰</span>
+          <div><p class="info-label">Lifetime Value</p><p class="info-val" id="modalLTV">—</p></div>
+        </div>
+      </div>
+
+      <div class="panel-divider"><span>Visit Summary</span></div>
+      <div class="visit-summary">
+        <div class="visit-stat">
+          <span class="visit-num" id="modalTotalVisits">0</span>
+          <span class="visit-label">Total Visits</span>
+        </div>
+        <div class="visit-stat">
+          <span class="visit-num" id="modalLastVisit">—</span>
+          <span class="visit-label">Last Visit</span>
+        </div>
+        <div class="visit-stat">
+          <span class="visit-num" id="modalNextFollowup">—</span>
+          <span class="visit-label">Next Follow-up</span>
+        </div>
+      </div>
+
+      <div class="panel-divider"><span>Recent Visits</span></div>
+      <div class="visits-list" id="visitsList">
+        <p class="no-visits">No visits recorded yet</p>
+      </div>
+
+      <div class="action-row">
+        <button class="btn-submit btn-form" id="btnOpenForm" onclick="openGoogleForm()" disabled>
+          Open Visit Form
+        </button>
+      </div>
+      <p class="form-note">Opens Google Form pre-filled with dealer details</p>
+      <div class="sync-info" id="modalSyncInfo"></div>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
