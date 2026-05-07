@@ -139,10 +139,9 @@
 
     async function deleteDocs(docNames) {
       if (docNames.length === 0) return;
+      // CORRECT: delete is a STRING (the doc path), not an object
       const payload = JSON.stringify({
-        writes: docNames.map(name => ({
-          delete: { name }
-        }))
+        writes: docNames.map(name => ({ delete: name }))
       });
       const res = await fetch(`${BASE}:commit?key=${API_KEY}`, {
         method: "POST",
@@ -154,11 +153,12 @@
 
     async function seedDocs(dealers) {
       if (dealers.length === 0) return;
+      // CORRECT: update.name uses full path WITHOUT /v1 prefix
       const writes = dealers.map(d => {
-        const name = `${BASE}/ups_dealers/${d.id}?key=${API_KEY}`;
+        const docName = `projects/${PROJECT_ID}/databases/(default)/documents/ups_dealers/${d.id}`;
         return {
           update: {
-            name,
+            name: docName,
             fields: toFields({
               id: d.id,
               code: d.id,
