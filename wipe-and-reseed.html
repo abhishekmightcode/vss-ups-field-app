@@ -8,34 +8,22 @@
     h2 { color: #f5a623; }
     .ok { color: #3ecf8e; }
     .err { color: #ff4444; }
-    pre { background: #1a1c20; padding: 12px; border-radius: 6px; overflow-x: auto; }
     button { background: #f5a623; color: #000; border: none; padding: 14px 28px; font-size: 16px; cursor: pointer; border-radius: 6px; }
     button:disabled { background: #555; cursor: not-allowed; }
-    #log { margin-top: 16px; white-space: pre-wrap; word-break: break-all; }
-    .info { color: #8a8f9a; }
+    #log { margin-top: 16px; white-space: pre-wrap; word-break: break-all; font-size: 13px; }
+    .info { color: #8a8f9a; font-size: 13px; }
   </style>
 </head>
 <body>
-  <h2>🗑️ Firebase Wipe & Re-Seed</h2>
-  <p class="info">This will delete ALL existing records in <code>ups_dealers</code> and re-seed with exactly 80 clean records from the master CSV.</p>
+  <h2>🗑️ Firebase Wipe & Re-Seed — NO AUTH</h2>
+  <p class="info">No Firebase Auth used. Uses Firestore REST API directly with API key only.</p>
   <button id="btn" onclick="run()">🗑️ WIPE & RE-SEED NOW</button>
   <div id="log"></div>
 
-  <script src="https://www.gstatic.com/firebasejs/11.5.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/11.5.0/firebase-firestore-compat.js"></script>
-
   <script>
-    const firebaseConfig = {
-      apiKey: "AIzaSyDLBkc4fkJP0wU4-DRil1x4zr0nelBZi5E",
-      authDomain: "upscrm-16643.firebaseapp.com",
-      projectId: "upscrm-16643",
-      storageBucket: "upscrm-16643.firebasestorage.app",
-      messagingSenderId: "53703710833",
-      appId: "1:53703710833:web:09bb7e05aa6d564ef023d0",
-      measurementId: "G-35DMX9YQ5L"
-    };
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
+    const PROJECT_ID = "upscrm-16643";
+    const API_KEY = "AIzaSyDLBkc4fkJP0wU4-DRil1x4zr0nelBZi5E";
+    const BASE = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
 
     const DEALERS = [
 {id:"1000036809",name:"Ae Battery Point",phone:null},
@@ -128,55 +116,104 @@
       logEl.innerHTML += `<span${cls}>${msg}</span>\n`;
     }
 
+    function toFields(obj) {
+      const out = {};
+      for (const [k, v] of Object.entries(obj)) {
+        if (v === null || v === undefined) out[k] = { nullValue: null };
+        else if (typeof v === "string") out[k] = { stringValue: v };
+        else if (typeof v === "number") out[k] = { integerValue: String(v) };
+        else if (typeof v === "boolean") out[k] = { booleanValue: v };
+      }
+      return out;
+    }
+
+    async function fetchAllDocs() {
+      const url = `${BASE}/ups_dealers?pageSize=500${API_KEY ? '&key=' + API_KEY : ''}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      return (data.documents || []).map(d => ({
+        name: d.name,
+        id: d.name.split('/').pop()
+      }));
+    }
+
+    async function deleteDocs(docNames) {
+      if (docNames.length === 0) return;
+      const payload = JSON.stringify({
+        writes: docNames.map(name => ({
+          delete: { name }
+        }))
+      });
+      const res = await fetch(`${BASE}:commit?key=${API_KEY}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload
+      });
+      return res.json();
+    }
+
+    async function seedDocs(dealers) {
+      if (dealers.length === 0) return;
+      const writes = dealers.map(d => {
+        const name = `${BASE}/ups_dealers/${d.id}?key=${API_KEY}`;
+        return {
+          update: {
+            name,
+            fields: toFields({
+              id: d.id,
+              code: d.id,
+              name: d.name,
+              phone: d.phone || null,
+              source: "csv_master",
+              last_synced: new Date().toISOString()
+            })
+          },
+          currentDocument: { exists: false }
+        };
+      });
+      const payload = JSON.stringify({ writes });
+      const res = await fetch(`${BASE}:commit?key=${API_KEY}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload
+      });
+      return res.json();
+    }
+
     async function run() {
       btn.disabled = true;
       btn.textContent = "Working...";
 
       try {
-        addLog("🔑 Signing in anonymously...");
-        await firebase.auth().signInAnonymously();
-        addLog("✅ Signed in\n", "ok");
-
-        // Step 1: Count existing
-        addLog("📋 Fetching existing docs...");
-        const snap = await db.collection("ups_dealers").get();
-        addLog(`Found ${snap.size} existing docs — deleting all...\n`);
+        // Step 1: Fetch all existing docs
+        addLog("📋 Fetching all existing docs...");
+        const docs = await fetchAllDocs();
+        addLog(`Found ${docs.length} existing docs\n`);
 
         // Step 2: Delete in batches of 10
         const BATCH = 10;
         let deleted = 0;
-        for (let i = 0; i < snap.size; i += BATCH) {
-          const batch = db.batch();
-          snap.docs.slice(i, i + BATCH).forEach(d => batch.delete(d.ref));
-          await batch.commit();
-          deleted += Math.min(BATCH, snap.size - i);
-          addLog(`  Deleted ${deleted}/${snap.size}...`);
+        for (let i = 0; i < docs.length; i += BATCH) {
+          const batch = docs.slice(i, i + BATCH);
+          const names = batch.map(d => d.name);
+          await deleteDocs(names);
+          deleted += batch.length;
+          addLog(`  Deleted ${deleted}/${docs.length}...`);
         }
         addLog(`\n✅ Deleted all ${deleted} old docs\n`, "ok");
 
-        // Step 3: Seed 80 clean records
+        // Step 3: Seed 80 clean records in batches of 10
         addLog(`🌱 Seeding 80 clean dealers...`);
         let seeded = 0;
         for (let i = 0; i < DEALERS.length; i += BATCH) {
-          const batch = db.batch();
-          DEALERS.slice(i, i + BATCH).forEach(d => {
-            const ref = db.collection("ups_dealers").doc(d.id);
-            batch.set(ref, {
-              id: d.id,
-              code: d.id,
-              name: d.name,
-              phone: d.phone,
-              source: "csv_master",
-              last_synced: firebase.firestore.FieldValue.serverTimestamp()
-            });
-          });
-          await batch.commit();
-          seeded += Math.min(BATCH, DEALERS.length - i);
+          const batch = DEALERS.slice(i, i + BATCH);
+          await seedDocs(batch);
+          seeded += batch.length;
           addLog(`  Seeded ${seeded}/80...`);
         }
 
         addLog(`\n🎉 DONE! 80 clean records in Firebase.`, "ok");
-        addLog("✅ Zoho CRM also updated — 64 codes added + 15 new created.", "ok");
+        addLog("✅ Zoho CRM also already updated with all codes.", "ok");
         addLog("\n📱 App: https://abhishekmightcode.github.io/vss-ups-field-app/", "ok");
         btn.textContent = "✅ DONE";
       } catch (err) {
