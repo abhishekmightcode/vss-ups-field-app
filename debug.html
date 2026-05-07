@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head><title>Firebase Debug</title></head>
+<body style="font-family:monospace;background:#0e0f11;color:#e8e9eb;padding:20px">
+<h2>Firebase Debug — Read-Only</h2>
+<pre id="out" style="font-size:12px"></pre>
+<script>
+const PROJECT = "upscrm-16643";
+const KEY = "AIzaSyDLBkc4fkJP0wU4-DRil1x4zr0nelBZi5E";
+const BASE = `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents`;
+
+async function main() {
+  const out = document.getElementById("out");
+  const snap = await fetch(`${BASE}/ups_dealers?pageSize=500&key=${KEY}`);
+  const data = await snap.json();
+  const docs = data.documents || [];
+  
+  out.textContent = `Total docs: ${docs.length}\n\n`;
+
+  // Group by doc id
+  const byId = {};
+  docs.forEach(d => {
+    const id = d.name.split("/").pop();
+    if (!byId[id]) byId[id] = [];
+    byId[id].push(d);
+  });
+
+  // Show duplicates
+  const dups = Object.entries(byId).filter(([id, arr]) => arr.length > 1);
+  out.textContent += `Unique IDs: ${Object.keys(byId).length}\n`;
+  out.textContent += `Duplicate IDs (same doc id, multiple entries): ${dups.length}\n\n`;
+
+  if (dups.length > 0) {
+    out.textContent += `DUPLICATE DOC IDs:\n`;
+    dups.forEach(([id, arr]) => {
+      out.textContent += `\nDoc ID: ${id} (${arr.length} entries)\n`;
+      arr.forEach((d, i) => {
+        const fields = d.fields || {};
+        out.textContent += `  [${i}] name=${fields.name?.stringValue || "?"} code=${fields.code?.stringValue || fields.dealer_code?.stringValue || "?"}\n`;
+      });
+    });
+  }
+
+  // Count docs with no code field
+  const noCode = docs.filter(d => {
+    const f = d.fields || {};
+    return !f.code?.stringValue && !f.dealer_code?.stringValue;
+  });
+  out.textContent += `\nDocs WITHOUT code field: ${noCode.length}\n`;
+
+  // Show first 10 doc IDs
+  out.textContent += `\nFirst 20 doc IDs:\n`;
+  Object.keys(byId).slice(0, 20).forEach(id => {
+    out.textContent += `  ${id} (${byId[id].length} entries)\n`;
+  });
+}
+main().catch(e => document.getElementById("out").textContent = e.message);
+</script>
+</body>
+</html>
