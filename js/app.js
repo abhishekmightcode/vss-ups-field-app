@@ -108,33 +108,26 @@ async function loadFromFirebase() {
   }
 }
 
-// ── Zoho: Get Access Token ──────────────────────────────────
-// ── Zoho: Cached Access Token ──────────────────────────────
-// Cache token for 55 minutes to avoid Zoho rate limits from repeated refresh calls
+// ── ZOHO PROXY (Cloudflare Tunnel — handles token management) ──
+// All Zoho API calls go through this proxy to avoid browser CORS / token rate limits
+const PROXY_BASE = "https://estimate-falls-gauge-moment.trycloudflare.com";
+
+// ── Zoho: Get Access Token via proxy ───────────────────────
 let _zohoToken = null;
 let _zohoTokenExpiry = 0; // Unix ms
 
 async function getZohoToken() {
   const now = Date.now();
-  // Reuse cached token if it's still valid (with 5-min buffer)
+  // Reuse cached token if valid (5-min buffer)
   if (_zohoToken && now < _zohoTokenExpiry - 5 * 60 * 1000) {
     return _zohoToken;
   }
   try {
-    const resp = await fetch(CONFIG.ZOHO.token_url, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        grant_type:    "refresh_token",
-        client_id:     CONFIG.ZOHO.client_id,
-        client_secret: CONFIG.ZOHO.client_secret,
-        refresh_token: CONFIG.ZOHO.refresh_token,
-      })
-    });
-    if (!resp.ok) throw new Error("Token failed: " + resp.status);
+    const resp = await fetch(PROXY_BASE + "/token");
+    if (!resp.ok) throw new Error("Proxy token failed: " + resp.status);
     const data = await resp.json();
     _zohoToken = data.access_token;
-    _zohoTokenExpiry = now + (data.expires_in_sec || 3600) * 1000;
+    _zohoTokenExpiry = now + (data.expires_in || 3600) * 1000;
     return _zohoToken;
   } catch (err) {
     console.error("Token error:", err);
@@ -142,64 +135,47 @@ async function getZohoToken() {
   }
 }
 
-// ── Zoho: Fetch All UPS Records ────────────────────────────
+// ── Zoho: Fetch UPS records via proxy ───────────────────────
 async function fetchZohoUPSRecords(token) {
-  const records = [];
-  let page = 1, moreRecords = true;
-
-  while (moreRecords) {
-    const resp = await fetch(
-      `${CONFIG.ZOHO.api_base}/${CONFIG.ZOHO.module}?per_page=200&page=${page}&fields=ALL`,
-      { headers: { "Authorization": `Zoho-oauthtoken ${token}` } }
-    );
-    if (resp.status === 204 || resp.status === 401) break;
-    if (!resp.ok) break;
-    const data = await resp.json();
-    if (data.data) records.push(...data.data);
-    moreRecords = data.info?.more_records === true;
-    page++;
-    if (page > 20) break; // safety cap
-  }
-  return records;
+  const resp = await fetch(PROXY_BASE + "/zoho/ups?per_page=200&page=1", {
+    headers: { "Authorization": "Zoho-oauthtoken " + token }
+  });
+  if (resp.status === 204 || resp.status === 401) return [];
+  if (!resp.ok) return [];
+  const data = await resp.json();
+  return data.data || [];
 }
 
-// ── Zoho: Update a single UPS record ───────────────────────
+// ── Zoho: Update UPS record via proxy ───────────────────────
 async function zohoUpdateRecord(token, recordId, fields) {
-  const resp = await fetch(`${CONFIG.ZOHO.api_base}/${CONFIG.ZOHO.module}/${recordId}`, {
+  const resp = await fetch(PROXY_BASE + "/zoho/ups/" + recordId, {
     method: "PUT",
     headers: {
-      "Authorization": `Zoho-oauthtoken ${token}`,
+      "Authorization": "Zoho-oauthtoken " + token,
       "Content-Type": "application/json"
     },
     body: JSON.stringify({ data: [fields] })
   });
-  const result = await resp.json();
-  if (resp.ok && result.data?.[0]?.status === "success") {
-    return { ok: true };
-  } else {
-    return { ok: false, error: result };
-  }
+  const text = await resp.text();
+  let json;
+  try { json = JSON.parse(text); } catch { json = {}; }
+  return { ok: resp.ok && !json.error, status: resp.status, body: json };
 }
 
-// ── Zoho: Create Dealer Meets entry ─────────────────────────
-async function zohoCreateDealerMeet(token, recordId, fields) {
-  const resp = await fetch(`${CONFIG.ZOHO.api_base}/${CONFIG.ZOHO.module}/${recordId}/Dealer_meets`, {
+// ── Zoho: Create sub-form entry (Dealer Meets) via proxy ───
+async function zohoCreateDealerMeets(token, recordId, fields) {
+  const resp = await fetch(PROXY_BASE + "/zoho/ups/" + recordId + "/Dealer_meets", {
     method: "POST",
     headers: {
-      "Authorization": `Zoho-oauthtoken ${token}`,
+      "Authorization": "Zoho-oauthtoken " + token,
       "Content-Type": "application/json"
     },
     body: JSON.stringify({ data: [fields] })
   });
-  const result = await resp.json();
-  return { ok: resp.ok || resp.status === 201, result };
-}
-
-// ── Zoho: Increment Total_visits ────────────────────────────
-async function zohoIncrementVisits(token, recordId, currentCount) {
-  return zohoUpdateRecord(token, recordId, {
-    Total_visits: (parseInt(currentCount) || 0) + 1
-  });
+  const text = await resp.text();
+  let json;
+  try { json = JSON.parse(text); } catch { json = {}; }
+  return { ok: resp.ok && !json.error, status: resp.status, body: json };
 }
 
 // ── Map Zoho record → Firestore doc ─────────────────────────
