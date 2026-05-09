@@ -1,0 +1,23 @@
+{
+  "name": "vss-ups-field-app",
+  "version": "1.0.0",
+  "description": "",
+  "main": "seeder.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/abhishekmightcode/vss-ups-field-app.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/abhishekmightcode/vss-ups-field-app/issues"
+  },
+  "homepage": "https://github.com/abhishekmightcode/vss-ups-field-app#readme",
+  "dependencies": {
+    "firebase-admin": "^13.9.0"
+  }
+}
