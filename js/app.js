@@ -109,7 +109,17 @@ async function loadFromFirebase() {
 }
 
 // ── Zoho: Get Access Token ──────────────────────────────────
+// ── Zoho: Cached Access Token ──────────────────────────────
+// Cache token for 55 minutes to avoid Zoho rate limits from repeated refresh calls
+let _zohoToken = null;
+let _zohoTokenExpiry = 0; // Unix ms
+
 async function getZohoToken() {
+  const now = Date.now();
+  // Reuse cached token if it's still valid (with 5-min buffer)
+  if (_zohoToken && now < _zohoTokenExpiry - 5 * 60 * 1000) {
+    return _zohoToken;
+  }
   try {
     const resp = await fetch(CONFIG.ZOHO.token_url, {
       method: "POST",
@@ -123,7 +133,9 @@ async function getZohoToken() {
     });
     if (!resp.ok) throw new Error("Token failed: " + resp.status);
     const data = await resp.json();
-    return data.access_token;
+    _zohoToken = data.access_token;
+    _zohoTokenExpiry = now + (data.expires_in_sec || 3600) * 1000;
+    return _zohoToken;
   } catch (err) {
     console.error("Token error:", err);
     return null;
