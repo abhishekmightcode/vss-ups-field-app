@@ -245,6 +245,7 @@ async function syncFromZoho() {
     for (const record of zohoRecords) {
       if (!record.id) continue;
       const docId = String(record.id); // PRIMARY KEY = Zoho record ID
+      const docRef = window.FB.db.collection(CONFIG.FIRESTORE_COLLECTION).doc(docId);
       const data = mapZohoToFirestore(record);
       batch.set(docRef, data, { merge: true });
     }
@@ -465,8 +466,8 @@ async function sendLocation() {
     });
 
     if (result.ok) {
-      // Update Firebase locally too
-      await window.FB.db.collection(CONFIG.FIRESTORE_COLLECTION).doc(activeDealer.dealer_code || activeDealer.id).update({
+      // Update Firebase locally — doc ID = Zoho record ID (activeDealer.id)
+      await window.FB.db.collection(CONFIG.FIRESTORE_COLLECTION).doc(activeDealer.id).update({
         lat: pos.lat,
         lng: pos.lng,
         location_synced: true
@@ -572,11 +573,11 @@ async function submitInfoForm() {
     const meetResult = await zohoCreateDealerMeet(token, activeDealer.id, dealerMeetFields);
     if (!meetResult.ok) console.warn("Dealer Meets creation partially failed:", meetResult);
 
-    // 4. Update Firebase
+    // 4. Update Firebase — doc ID = Zoho record ID (activeDealer.id)
     const currentCount = activeDealer.visit_count || 0;
     const visitCount = currentCount + 1;
 
-    await window.FB.db.collection(CONFIG.FIRESTORE_COLLECTION).doc(activeDealer.dealer_code || activeDealer.id).update({
+    await window.FB.db.collection(CONFIG.FIRESTORE_COLLECTION).doc(activeDealer.id).update({
       ...fields,
       visit_count:      visitCount,
       last_visit_date:  new Date().toISOString(),
