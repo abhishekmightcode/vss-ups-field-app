@@ -84,7 +84,7 @@ async function loadFromFirebase() {
 
     document.getElementById("totalDealers").textContent = allDealers.length;
     const totalVisits = allDealers.reduce((sum, d) => sum + (d.visit_count || 0), 0);
-    document.getElementById("totalVisits").textContent = totalVisits;
+    document.getElementById("totalVisits").textContent = "000";
 
     const sorted = [...allDealers].sort((a, b) => {
       const ta = a.last_synced ? (a.last_synced.toMillis ? a.last_synced.toMillis() : new Date(a.last_synced).getTime()) : 0;
