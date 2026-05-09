@@ -148,18 +148,24 @@ async function fetchZohoUPSRecords(token) {
 
 // ── Zoho: Update UPS record via proxy ───────────────────────
 async function zohoUpdateRecord(token, recordId, fields) {
-  const resp = await fetch(PROXY_BASE + "/zoho/ups/" + recordId, {
-    method: "PUT",
-    headers: {
-      "Authorization": "Zoho-oauthtoken " + token,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ data: [fields] })
-  });
-  const text = await resp.text();
-  let json;
-  try { json = JSON.parse(text); } catch { json = {}; }
-  return { ok: resp.ok && !json.error, status: resp.status, body: json };
+  try {
+    const resp = await fetch(PROXY_BASE + "/zoho/ups/" + recordId, {
+      method: "PUT",
+      headers: {
+        "Authorization": "Zoho-oauthtoken " + token,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ data: [fields] }),
+      signal: AbortSignal.timeout(15000)
+    });
+    const text = await resp.text();
+    let json;
+    try { json = JSON.parse(text); } catch { json = { raw: text }; }
+    const ok = resp.ok && !json.error;
+    return { ok, status: resp.status, body: json, error: ok ? null : (json.message || json.error || "Request failed") };
+  } catch (err) {
+    return { ok: false, status: 0, body: {}, error: err.message };
+  }
 }
 
 // ── Zoho: Create sub-form entry (Dealer Meets) via proxy ───
@@ -475,9 +481,10 @@ async function sendLocation() {
         }
       }
     } else {
-      showToast("Failed to update Zoho: " + JSON.stringify(result.error), "error");
+      showToast("Failed to update Zoho: " + (result.error || "Unknown error"), "error");
     }
   } catch (err) {
+    console.error("sendLocation error:", err);
     showToast("Error: " + err.message, "error");
   } finally {
     btn.disabled = false;
