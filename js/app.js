@@ -246,7 +246,6 @@ async function syncFromZoho() {
       if (!record.id) continue;
       const docId = String(record.id); // PRIMARY KEY = Zoho record ID
       const data = mapZohoToFirestore(record);
-      data.dealer_code = String(code) || ""; // SECONDARY KEY = dealer code as field
       batch.set(docRef, data, { merge: true });
     }
     await batch.commit();
