@@ -29,6 +29,6 @@ const CONFIG = {
   FOLLOWUP_TYPES: ["Call", "Visit", "Meeting", "Site Survey", "Demo", "Order Follow-up"],
 
   // ── FIRESTORE COLLECTION ────────────────────────────────────
-  FIRESTORE_COLLECTION: "ups_dealers",
+  FIRESTORE_COLLECTION: "upsdealers",
 
 };

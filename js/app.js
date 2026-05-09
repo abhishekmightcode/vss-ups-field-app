@@ -244,11 +244,9 @@ async function syncFromZoho() {
     const batch = window.FB.db.batch();
     for (const record of zohoRecords) {
       if (!record.id) continue;
-      const code = record.Dealer_Code;
-      const docId = (code && String(code).trim()) ? String(code) : String(record.id);
-      const docRef = window.FB.db.collection(CONFIG.FIRESTORE_COLLECTION).doc(docId);
+      const docId = String(record.id); // PRIMARY KEY = Zoho record ID
       const data = mapZohoToFirestore(record);
-      if (code) data.dealer_code = String(code);
+      data.dealer_code = String(code) || ""; // SECONDARY KEY = dealer code as field
       batch.set(docRef, data, { merge: true });
     }
     await batch.commit();
@@ -353,6 +351,7 @@ function openModal(d) {
   document.getElementById("modalDealerName").textContent = d.name || "—";
   document.getElementById("modalPhone").textContent      = d.phone || "—";
   document.getElementById("modalCode").textContent        = (d.code || d.dealer_code || "—");
+  document.getElementById("modalRecordId").textContent    = d.id || "—";
   document.getElementById("modalType").textContent        = d.dealer_type || "—";
   document.getElementById("modalLTV").textContent         = d.total_lifetime_value
     ? `Rs. ${Number(d.total_lifetime_value).toLocaleString("en-IN")}`
