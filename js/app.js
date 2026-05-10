@@ -414,27 +414,10 @@ async function sendLocation() {
     const result = await sendToWebhook(payload);
 
     if (result.ok) {
-      // Update Firebase locally
-      await window.FB.db.collection(CONFIG.FIRESTORE_COLLECTION).doc(activeDealer.id).update({
-        lat: pos.lat,
-        lng: pos.lng,
-        location_synced: true
-      });
       showToast("📍 Location sent successfully ✓");
       document.getElementById("modalLocationStatus").textContent =
         `${parseFloat(pos.lat).toFixed(4)}, ${parseFloat(pos.lng).toFixed(4)}`;
       document.getElementById("modalLocationStatus").classList.add("synced");
-      // Refresh the card
-      const card = document.querySelector(`.dealer-card[data-id="${activeDealer.dealer_code}"]`);
-      if (card) {
-        const meta = card.querySelector(".card-meta");
-        if (meta && !meta.innerHTML.includes("Location synced")) {
-          const locItem = document.createElement("span");
-          locItem.className = "card-meta-item location-synced";
-          locItem.textContent = "📍 Location synced";
-          meta.appendChild(locItem);
-        }
-      }
     } else {
       const errMsg = result.error || (result.body?.message || "Webhook failed");
       showToast("Failed: " + errMsg, "error");
@@ -548,34 +531,9 @@ async function submitInfoForm() {
       return;
     }
 
-    // Update Firebase
-    const currentCount = activeDealer.visit_count || 0;
-    const visitCount = currentCount + 1;
-
-    await window.FB.db.collection(CONFIG.FIRESTORE_COLLECTION).doc(activeDealer.id).update({
-      ...fields,
-      visit_count:       visitCount,
-      last_visit_date:   new Date().toISOString(),
-      follow_up_date_time: fields.Follow_up_date_and_time,
-      follow_up_notes:   fields.Follow_up_notes,
-      existing_battery_stock:  fields.Existing_Battery_stock,
-      existing_ups_stock:      fields.Existing_UPS_stock,
-      existing_high_kv_ups_stock: fields.Existing_High_KV_UPS_stock,
-      approx_value_in_outlet:  fields.Approx_value_in_outlet,
-      credit_value_with_dealer: fields.Credit_value_with_dealer,
-      dealer_meets: firebase.firestore.FieldValue.arrayUnion({
-        ...dealerMeetFields,
-        Visit_Number: visitCount,
-        submitted_at: new Date().toISOString(),
-        record_id: activeDealer.id,
-      })
-    });
-
-    showToast(`✅ Visit #${visitCount} submitted successfully!`);
+    showToast("✅ Info submitted! n8n will push to Zoho.");
     closeInfoForm();
     closeModal();
-
-    setTimeout(() => syncFromZoho(), 1000);
 
   } catch (err) {
     showToast("Error: " + err.message, "error");
@@ -675,23 +633,7 @@ async function submitMeetingForm() {
       return;
     }
 
-    // Update Firebase locally
-    await window.FB.db.collection(CONFIG.FIRESTORE_COLLECTION).doc(activeDealer.id).update({
-      visit_count:       visitNum,
-      last_visit_date:   new Date().toISOString(),
-      dealer_meets: firebase.firestore.FieldValue.arrayUnion({
-        Visit_Number: visitNum,
-        Visit_Date:   new Date().toISOString().split("T")[0],
-        Visit_Purpose: document.getElementById("meetingPurpose").value,
-        Visit_Notes:  document.getElementById("meetingNotes").value,
-        Competition:  document.getElementById("meetingCompetition").value,
-        Outcome:      document.getElementById("meetingOutcome").value,
-        submitted_at: new Date().toISOString(),
-        record_id: activeDealer.id,
-      })
-    });
-
-    showToast("✅ Meeting #" + visitNum + " recorded!");
+    showToast("✅ Meeting recorded! n8n will push to Zoho.");
     closeMeetingForm();
     closeModal();
 
