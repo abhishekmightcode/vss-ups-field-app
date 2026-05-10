@@ -108,80 +108,27 @@ async function loadFromFirebase() {
   }
 }
 
-// ── ZOHO PROXY (Cloudflare Tunnel — handles token management) ──
-// All Zoho API calls go through this proxy to avoid browser CORS / token rate limits
-const PROXY_BASE = "https://estimate-falls-gauge-moment.trycloudflare.com";
+// ── WEBHOOK: n8n Workflow ─────────────────────────────────
+// All field data goes to n8n webhook — different payloads per action
 
-// ── Zoho: Get Access Token via proxy ───────────────────────
-let _zohoToken = null;
-let _zohoTokenExpiry = 0; // Unix ms
+const WEBHOOK_URL = "https://vsustainsolar.app.n8n.cloud/webhook/ed515a09-7182-4541-9f7d-5b356d2e5770";
 
-async function getZohoToken() {
-  const now = Date.now();
-  // Reuse cached token if valid (5-min buffer)
-  if (_zohoToken && now < _zohoTokenExpiry - 5 * 60 * 1000) {
-    return _zohoToken;
-  }
+// Helper: send JSON to n8n webhook
+async function sendToWebhook(payload) {
   try {
-    const resp = await fetch(PROXY_BASE + "/token");
-    if (!resp.ok) throw new Error("Proxy token failed: " + resp.status);
-    const data = await resp.json();
-    _zohoToken = data.access_token;
-    _zohoTokenExpiry = now + (data.expires_in || 3600) * 1000;
-    return _zohoToken;
-  } catch (err) {
-    console.error("Token error:", err);
-    return null;
-  }
-}
-
-// ── Zoho: Fetch UPS records via proxy ───────────────────────
-async function fetchZohoUPSRecords(token) {
-  const resp = await fetch(PROXY_BASE + "/zoho/ups?per_page=200&page=1", {
-    headers: { "Authorization": "Zoho-oauthtoken " + token }
-  });
-  if (resp.status === 204 || resp.status === 401) return [];
-  if (!resp.ok) return [];
-  const data = await resp.json();
-  return data.data || [];
-}
-
-// ── Zoho: Update UPS record via proxy ───────────────────────
-async function zohoUpdateRecord(token, recordId, fields) {
-  try {
-    const resp = await fetch(PROXY_BASE + "/zoho/ups/" + recordId, {
-      method: "PUT",
-      headers: {
-        "Authorization": "Zoho-oauthtoken " + token,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ data: [fields] }),
+    const resp = await fetch(WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
       signal: AbortSignal.timeout(15000)
     });
     const text = await resp.text();
     let json;
     try { json = JSON.parse(text); } catch { json = { raw: text }; }
-    const ok = resp.ok && !json.error;
-    return { ok, status: resp.status, body: json, error: ok ? null : (json.message || json.error || "Request failed") };
+    return { ok: resp.ok, status: resp.status, body: json };
   } catch (err) {
     return { ok: false, status: 0, body: {}, error: err.message };
   }
-}
-
-// ── Zoho: Create sub-form entry (Dealer Meets) via proxy ───
-async function zohoCreateDealerMeets(token, recordId, fields) {
-  const resp = await fetch(PROXY_BASE + "/zoho/ups/" + recordId + "/Dealer_meets", {
-    method: "POST",
-    headers: {
-      "Authorization": "Zoho-oauthtoken " + token,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ data: [fields] })
-  });
-  const text = await resp.text();
-  let json;
-  try { json = JSON.parse(text); } catch { json = {}; }
-  return { ok: resp.ok && !json.error, status: resp.status, body: json };
 }
 
 // ── Map Zoho record → Firestore doc ─────────────────────────
@@ -219,6 +166,19 @@ function mapZohoToFirestore(record) {
   };
 }
 
+// ── Firebase: Reload dealer list ──────────────────────────
+async function reloadFromFirebase() {
+  const snap = await window.FB.db
+    .collection(CONFIG.FIRESTORE_COLLECTION)
+    .orderBy("name")
+    .get();
+  allDealers = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  filteredDealers = allDealers;
+  renderDealers();
+  document.getElementById("totalDealers").textContent = allDealers.length;
+  document.getElementById("totalVisits").textContent = "000";
+}
+
 // ── Firebase: Write All Zoho Records ───────────────────────
 async function syncFromZoho() {
   if (syncInProgress) return;
@@ -229,31 +189,15 @@ async function syncFromZoho() {
   badge.textContent = "↻";
 
   try {
-    const token = await getZohoToken();
-    if (!token) throw new Error("No Zoho token");
-
-    const zohoRecords = await fetchZohoUPSRecords(token);
-    console.log(`Zoho fetched ${zohoRecords.length} records`);
-
-    const batch = window.FB.db.batch();
-    for (const record of zohoRecords) {
-      if (!record.id) continue;
-      const docId = String(record.id); // PRIMARY KEY = Zoho record ID
-      const docRef = window.FB.db.collection(CONFIG.FIRESTORE_COLLECTION).doc(docId);
-      const data = mapZohoToFirestore(record);
-      batch.set(docRef, data, { merge: true });
-    }
-    await batch.commit();
-    console.log(`Firebase synced ${zohoRecords.length} records`);
-
+    // Reload from Firebase (dealers seeded by server-side sync from Zoho)
+    await reloadFromFirebase();
     lastSyncTime = new Date();
     document.getElementById("lastSync").textContent = "Just now";
     badge.classList.remove("syncing");
     badge.textContent = "●";
-    await loadFromFirebase();
 
   } catch (err) {
-    console.error("Zoho→Firebase sync error:", err);
+    console.error("Firebase reload error:", err);
     badge.classList.add("error");
     badge.textContent = "✕";
     setTimeout(() => { badge.classList.remove("error"); badge.textContent = "●"; }, 3000);
@@ -448,26 +392,37 @@ async function sendLocation() {
     }
   }
 
-  btn.textContent = "Sending to Zoho...";
+  btn.textContent = "Sending...";
 
   try {
-    const token = await getZohoToken();
-    if (!token) throw new Error("No Zoho token");
+    // Payload for Send Location — lightweight ping with GPS
+    const payload = {
+      action: "send_location",
+      timestamp: new Date().toISOString(),
+      dealer: {
+        zoho_id:    activeDealer.id,
+        dealer_code: activeDealer.dealer_code || activeDealer.code || "",
+        name:        activeDealer.name || ""
+      },
+      location: {
+        latitude:  pos.lat,
+        longitude: pos.lng,
+        accuracy:  pos.accuracy || null
+      }
+    };
 
-    const result = await zohoUpdateRecord(token, activeDealer.id, {
-      Address_of_the_dealer_Coordinates_Latitude:  String(pos.lat),
-      Address_of_the_dealer_Coordinates_Longitude: String(pos.lng)
-    });
+    const result = await sendToWebhook(payload);
 
     if (result.ok) {
-      // Update Firebase locally — doc ID = Zoho record ID (activeDealer.id)
+      // Update Firebase locally
       await window.FB.db.collection(CONFIG.FIRESTORE_COLLECTION).doc(activeDealer.id).update({
         lat: pos.lat,
         lng: pos.lng,
         location_synced: true
       });
-      showToast("📍 Location synced to Zoho CRM ✓");
-      document.getElementById("modalLocationStatus").textContent = `${parseFloat(pos.lat).toFixed(4)}, ${parseFloat(pos.lng).toFixed(4)}`;
+      showToast("📍 Location sent successfully ✓");
+      document.getElementById("modalLocationStatus").textContent =
+        `${parseFloat(pos.lat).toFixed(4)}, ${parseFloat(pos.lng).toFixed(4)}`;
       document.getElementById("modalLocationStatus").classList.add("synced");
       // Refresh the card
       const card = document.querySelector(`.dealer-card[data-id="${activeDealer.dealer_code}"]`);
@@ -481,7 +436,8 @@ async function sendLocation() {
         }
       }
     } else {
-      showToast("Failed to update Zoho: " + (result.error || "Unknown error"), "error");
+      const errMsg = result.error || (result.body?.message || "Webhook failed");
+      showToast("Failed: " + errMsg, "error");
     }
   } catch (err) {
     console.error("sendLocation error:", err);
@@ -535,7 +491,7 @@ async function submitInfoForm() {
   const fields = {
     Dealer_Type:               document.getElementById("formDealerType").value,
     Existing_Battery_stock:    document.getElementById("formBatteryStock").value,
-    Existing_UPS_stock:         document.getElementById("formUpsStock").value,
+    Existing_UPS_stock:        document.getElementById("formUpsStock").value,
     Existing_High_KV_UPS_stock: document.getElementById("formHighKvUpsStock").value,
     Approx_value_in_outlet:     document.getElementById("formApproxValue").value,
     Credit_value_with_dealer:   document.getElementById("formCreditValue").value,
@@ -550,38 +506,62 @@ async function submitInfoForm() {
     Visit_Notes:         document.getElementById("formVisitNotes").value,
     Competition_In_Use:   document.getElementById("formCompetitionInUse").value,
     Follow_up_Type:      document.getElementById("formNextFollowUpType").value,
-    // Image_URL added later via photo form
   };
 
   try {
-    const token = await getZohoToken();
-    if (!token) throw new Error("No Zoho token");
+    // Payload for Submit Info — full dealer info + visit record
+    const payload = {
+      action: "submit_info",
+      timestamp: new Date().toISOString(),
+      dealer: {
+        zoho_id:     activeDealer.id,
+        dealer_code: activeDealer.dealer_code || activeDealer.code || "",
+        name:        activeDealer.name || "",
+        phone:       activeDealer.phone || ""
+      },
+      visit: {
+        visit_number: (activeDealer.visit_count || 0) + 1,
+        visit_date:   new Date().toISOString().split("T")[0],
+        visit_notes:  document.getElementById("formVisitNotes").value,
+        competition_in_use: document.getElementById("formCompetitionInUse").value,
+        follow_up_type:     document.getElementById("formNextFollowUpType").value,
+      },
+      fields: {
+        Dealer_Type:               fields.Dealer_Type,
+        Existing_Battery_stock:     fields.Existing_Battery_stock,
+        Existing_UPS_stock:         fields.Existing_UPS_stock,
+        Existing_High_KV_UPS_stock: fields.Existing_High_KV_UPS_stock,
+        Approx_value_in_outlet:     fields.Approx_value_in_outlet,
+        Credit_value_with_dealer:   fields.Credit_value_with_dealer,
+        Follow_up_date_and_time:    fields.Follow_up_date_and_time,
+        Follow_up_notes:            fields.Follow_up_notes,
+      }
+    };
 
-    // 1. Update main UPS record (text fields)
-    const updateResult = await zohoUpdateRecord(token, activeDealer.id, fields);
-    if (!updateResult.ok) throw new Error("Zoho update failed: " + JSON.stringify(updateResult.error));
+    const result = await sendToWebhook(payload);
 
-    // 2. Increment Total_visits
-    await zohoIncrementVisits(token, activeDealer.id, activeDealer.visit_count || 0);
+    if (!result.ok) {
+      const errMsg = result.error || (result.body?.message || "Webhook failed");
+      showToast("Failed: " + errMsg, "error");
+      btn.disabled = false;
+      btn.textContent = "Submit to Zoho CRM";
+      return;
+    }
 
-    // 3. Create Dealer Meets entry
-    const meetResult = await zohoCreateDealerMeet(token, activeDealer.id, dealerMeetFields);
-    if (!meetResult.ok) console.warn("Dealer Meets creation partially failed:", meetResult);
-
-    // 4. Update Firebase — doc ID = Zoho record ID (activeDealer.id)
+    // Update Firebase
     const currentCount = activeDealer.visit_count || 0;
     const visitCount = currentCount + 1;
 
     await window.FB.db.collection(CONFIG.FIRESTORE_COLLECTION).doc(activeDealer.id).update({
       ...fields,
-      visit_count:      visitCount,
-      last_visit_date:  new Date().toISOString(),
+      visit_count:       visitCount,
+      last_visit_date:   new Date().toISOString(),
       follow_up_date_time: fields.Follow_up_date_and_time,
-      follow_up_notes: fields.Follow_up_notes,
-      existing_battery_stock: fields.Existing_Battery_stock,
-      existing_ups_stock: fields.Existing_UPS_stock,
+      follow_up_notes:   fields.Follow_up_notes,
+      existing_battery_stock:  fields.Existing_Battery_stock,
+      existing_ups_stock:      fields.Existing_UPS_stock,
       existing_high_kv_ups_stock: fields.Existing_High_KV_UPS_stock,
-      approx_value_in_outlet: fields.Approx_value_in_outlet,
+      approx_value_in_outlet:  fields.Approx_value_in_outlet,
       credit_value_with_dealer: fields.Credit_value_with_dealer,
       dealer_meets: firebase.firestore.FieldValue.arrayUnion({
         ...dealerMeetFields,
@@ -595,7 +575,6 @@ async function submitInfoForm() {
     closeInfoForm();
     closeModal();
 
-    // Trigger background sync to refresh list
     setTimeout(() => syncFromZoho(), 1000);
 
   } catch (err) {
