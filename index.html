@@ -170,9 +170,9 @@
           <span class="action-icon">📝</span>
           <span class="action-label">Submit Info</span>
         </button>
-        <button class="action-btn action-photo" id="btnUploadPhoto" onclick="openPhotoForm()" disabled>
-          <span class="action-icon">📷</span>
-          <span class="action-label">Upload Photo</span>
+        <button class="action-btn action-meeting" id="btnRecordMeeting" onclick="openMeetingForm()" disabled>
+          <span class="action-icon">📋</span>
+          <span class="action-label">Record Meeting</span>
         </button>
       </div>
 
@@ -296,6 +296,111 @@
       <div class="form-footer">
         <button class="btn-submit" id="btnFormSubmit" onclick="submitInfoForm()">Submit to Zoho CRM</button>
         <button class="btn-cancel" onclick="closeInfoForm()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────
+       RECORD MEETING FORM (Dealer Meets sub-form)
+       ───────────────────────────────────────────────────── -->
+  <div class="modal-overlay hidden" id="meetingFormModal">
+    <div class="modal-sheet info-form-sheet">
+      <div class="modal-handle"></div>
+
+      <div class="modal-header">
+        <div>
+          <p class="modal-label">Record Meeting</p>
+          <h2 class="modal-title" id="meetingDealerName">—</h2>
+        </div>
+        <button class="modal-close" onclick="closeMeetingForm()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <input type="hidden" id="meetingRecordId" />
+      <input type="hidden" id="meetingDealerCode" />
+
+      <div class="form-body">
+        <div class="form-prefilled-row">
+          <div class="form-prefilled-item">
+            <span class="form-prefilled-label">Visit #</span>
+            <span class="form-prefilled-value" id="meetingVisitNumber">—</span>
+          </div>
+          <div class="form-prefilled-item">
+            <span class="form-prefilled-label">Date</span>
+            <span class="form-prefilled-value" id="meetingDate">—</span>
+          </div>
+        </div>
+
+        <div class="form-divider"><span>Meeting Details</span></div>
+
+        <div class="form-group">
+          <label class="form-label">Visit Purpose</label>
+          <select class="form-select" id="meetingPurpose">
+            <option value="">Select purpose...</option>
+            <option value="Sales Visit">Sales Visit</option>
+            <option value="Follow-up Call">Follow-up Call</option>
+            <option value="Site Survey">Site Survey</option>
+            <option value="Demo">Demo</option>
+            <option value="Meeting">Meeting</option>
+            <option value="Order Follow-up">Order Follow-up</option>
+            <option value="Service Call">Service Call</option>
+            <option value="Collection">Collection</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Visit Notes / Discussion Summary</label>
+          <textarea class="form-textarea" id="meetingNotes" placeholder="What was discussed, outcomes, action points..." rows="3"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Competition In Use</label>
+          <input class="form-input" id="meetingCompetition" type="text" placeholder="e.g. Luminous, Exide, Microtek" />
+        </div>
+
+        <div class="form-divider"><span>Outcome & Follow-up</span></div>
+
+        <div class="form-group">
+          <label class="form-label">Outcome</label>
+          <select class="form-select" id="meetingOutcome">
+            <option value="">Select outcome...</option>
+            <option value="Positive - Order Likely">Positive - Order Likely</option>
+            <option value="Positive - Future Scope">Positive - Future Scope</option>
+            <option value="Neutral - Need Follow-up">Neutral - Need Follow-up</option>
+            <option value="Negative - Not Interested">Negative - Not Interested</option>
+            <option value="Blocked - Budget Issue">Blocked - Budget Issue</option>
+          </select>
+        </div>
+
+        <div class="form-row-2">
+          <div class="form-group">
+            <label class="form-label">Next Follow-up Type</label>
+            <select class="form-select" id="meetingNextType">
+              <option value="">Select type...</option>
+              <option value="Call">Call</option>
+              <option value="Visit">Visit</option>
+              <option value="Meeting">Meeting</option>
+              <option value="Site Survey">Site Survey</option>
+              <option value="Demo">Demo</option>
+              <option value="Order Follow-up">Order Follow-up</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Next Follow-up Date</label>
+            <input class="form-input" id="meetingNextDate" type="date" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Order Value Expected (Rs)</label>
+          <input class="form-input" id="meetingOrderValue" type="text" placeholder="e.g. 45000" />
+        </div>
+      </div>
+
+      <div class="form-footer">
+        <button class="btn-submit" id="btnMeetingSubmit" onclick="submitMeetingForm()">Submit Meeting</button>
+        <button class="btn-cancel" onclick="closeMeetingForm()">Cancel</button>
       </div>
     </div>
   </div>

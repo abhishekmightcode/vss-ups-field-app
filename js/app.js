@@ -344,7 +344,7 @@ function openModal(d) {
   // Enable buttons
   document.getElementById("btnSendLocation").disabled  = false;
   document.getElementById("btnSubmitInfo").disabled    = false;
-  document.getElementById("btnUploadPhoto").disabled    = !CONFIG.GOOGLE_FORM.enabled;
+  document.getElementById("btnRecordMeeting").disabled = false;
 
   document.getElementById("detailModal").classList.remove("hidden");
   document.body.style.overflow = "hidden";
@@ -600,6 +600,107 @@ function openPhotoForm() {
   params.set(cfg.entry_dealer_code, activeDealer.dealer_code || activeDealer.code || "");
   const url = `${cfg.base_url}?${params.toString()}`;
   window.open(url, "_blank");
+}
+
+// ─────────────────────────────────────────────────────────────
+// BUTTON 4: RECORD MEETING (Dealer Meets sub-form)
+// ─────────────────────────────────────────────────────────────
+async function openMeetingForm() {
+  if (!activeDealer) return;
+  const visitNum = (activeDealer.visit_count || 0) + 1;
+  document.getElementById("meetingDealerName").textContent  = activeDealer.name || "";
+  document.getElementById("meetingRecordId").value          = activeDealer.id || "";
+  document.getElementById("meetingDealerCode").value        = activeDealer.dealer_code || activeDealer.code || "";
+  document.getElementById("meetingVisitNumber").textContent = "#" + visitNum;
+  document.getElementById("meetingDate").textContent        = new Date().toLocaleDateString("en-IN", {
+    day: "2-digit", month: "short", year: "numeric"
+  });
+
+  // Clear form
+  document.getElementById("meetingPurpose").value    = "";
+  document.getElementById("meetingNotes").value      = "";
+  document.getElementById("meetingCompetition").value= "";
+  document.getElementById("meetingOutcome").value    = "";
+  document.getElementById("meetingNextType").value   = "";
+  document.getElementById("meetingNextDate").value   = "";
+  document.getElementById("meetingOrderValue").value= "";
+
+  document.getElementById("meetingFormModal").classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+}
+
+function closeMeetingForm() {
+  document.getElementById("meetingFormModal").classList.add("hidden");
+  document.body.style.overflow = "";
+}
+
+async function submitMeetingForm() {
+  if (!activeDealer) return;
+  const btn = document.getElementById("btnMeetingSubmit");
+  btn.disabled = true;
+  btn.textContent = "Sending...";
+
+  const visitNum = (activeDealer.visit_count || 0) + 1;
+
+  const payload = {
+    action: "record_meeting",
+    timestamp: new Date().toISOString(),
+    dealer: {
+      zoho_id:     activeDealer.id,
+      dealer_code: activeDealer.dealer_code || activeDealer.code || "",
+      name:        activeDealer.name || "",
+      phone:       activeDealer.phone || ""
+    },
+    meeting: {
+      visit_number:     visitNum,
+      visit_date:       new Date().toISOString().split("T")[0],
+      visit_purpose:    document.getElementById("meetingPurpose").value,
+      visit_notes:      document.getElementById("meetingNotes").value,
+      competition:      document.getElementById("meetingCompetition").value,
+      outcome:          document.getElementById("meetingOutcome").value,
+      next_follow_type: document.getElementById("meetingNextType").value,
+      next_follow_date: document.getElementById("meetingNextDate").value || null,
+      order_value_expected: document.getElementById("meetingOrderValue").value || null,
+    }
+  };
+
+  try {
+    const result = await sendToWebhook(payload);
+
+    if (!result.ok) {
+      const errMsg = result.error || (result.body?.message || "Webhook failed");
+      showToast("Failed: " + errMsg, "error");
+      btn.disabled = false;
+      btn.textContent = "Submit Meeting";
+      return;
+    }
+
+    // Update Firebase locally
+    await window.FB.db.collection(CONFIG.FIRESTORE_COLLECTION).doc(activeDealer.id).update({
+      visit_count:       visitNum,
+      last_visit_date:   new Date().toISOString(),
+      dealer_meets: firebase.firestore.FieldValue.arrayUnion({
+        Visit_Number: visitNum,
+        Visit_Date:   new Date().toISOString().split("T")[0],
+        Visit_Purpose: document.getElementById("meetingPurpose").value,
+        Visit_Notes:  document.getElementById("meetingNotes").value,
+        Competition:  document.getElementById("meetingCompetition").value,
+        Outcome:      document.getElementById("meetingOutcome").value,
+        submitted_at: new Date().toISOString(),
+        record_id: activeDealer.id,
+      })
+    });
+
+    showToast("✅ Meeting #" + visitNum + " recorded!");
+    closeMeetingForm();
+    closeModal();
+
+  } catch (err) {
+    showToast("Error: " + err.message, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Submit Meeting";
+  }
 }
 
 // ── Toast Notification ─────────────────────────────────────
